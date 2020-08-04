@@ -19,32 +19,120 @@
 #include <winsock2.h>
 #include <stdio.h>
 #include <conio.h>
+#include "zone_file.h"
+#include "llist.h" // simple linked list libray - get liblist at https://github.com/mellowcandle/liblist
 
 SOCKET local_name_server;
 SOCKET remote_name_server;
 
+dns_answer_t* dns_record_collection = NULL;
+unsigned int dns_record_count = 0;
+
+
+typedef struct delegate_request {
+    uint16_t id;
+    struct sockaddr_in query_source;
+} delegate_request_t;
+
+llist delegate_requests_list;
+
 void ReceivedQuery(const char* dgram, int length, struct sockaddr_in query_addr)
 {
-    char *ip = inet_ntoa(query_addr.sin_addr);
-    printf("\nLocal nameserver got query from %s: ", ip);
+    // log the query
+    printf("\n\n\nLocal nameserver got query from %s: ", inet_ntoa(query_addr.sin_addr));
 
-    // relay query to remote nameserver
-    send(remote_name_server, dgram, length, 0);
+    // read the request
+    dns_transaction_t* query = read_dns_transaction(dgram, length);
+
+    if (!query)
+        return;
+    //else
+    //    print_dns_transaction(query);
+
+    // look for a match in the records
+    dns_transaction_t* reply = NULL;
+
+    for (uint16_t q = 0; q < query->header.QDCount; q++)
+    {
+        printf("\nQuery: %s", query->questions[q].qname);
+        int match = -1;
+
+        while ((match = find_next_dns_match(query->questions[q].qname, dns_record_collection, dns_record_count, match)) >= 0)
+        {
+            // we found a match
+            if (reply == NULL) // maybe the first?
+            {
+                if ( (reply = create_dns_reply(query)) == NULL)
+                    continue; // creation check failed
+            }
+
+            add_answer_to_dns_reply(reply, dns_record_collection[match]);
+        }
+    }
+
+    if (!reply)
+    {
+        // no matches found
+        // relay query to remote nameserver
+
+        /*delegate_request_t* entry = (delegate_request_t*)malloc(sizeof(delegate_request_t));
+        *entry = (delegate_request_t){
+            .id = query->header.id,
+            .query_source = query_addr,
+            };
+
+
+        if (llist_push(delegate_requests_list, entry) == LLIST_SUCCESS)
+        {
+            send(remote_name_server, dgram, length, 0);
+            printf("\nNo matches found: relaying to backup server...");
+        }*/
+    }
+    else
+    {
+        // match was found :)
+        print_dns_transaction(reply);
+
+        char out_buff[512];
+        int len = write_dns_transaction(out_buff, 256, reply);
+
+        if (sendto(local_name_server, out_buff, len, 0, (SOCKADDR*)&query_addr, sizeof(query_addr)) == SOCKET_ERROR)
+            fprintf(stderr, "\nError trying to send reply: %d", WSAGetLastError());
+    }
+
+    free(reply);
+    free(query);
 }
 
 void ReceivedAnswer(const char* dgram, int length)
 {
     printf("\n\n\nRemote nameserver provided answer:");
 
-    dns_transaction_t* tra = read_dns_transaction(dgram, length);
-    if (tra == NULL)
+    // get the reply from the server
+    dns_transaction_t* remote_reply = read_dns_transaction(dgram, length);
+    if (remote_reply == NULL)
         return;
+    else
+        print_dns_transaction(remote_reply);
 
-    printf("\nDatagram read success!");
+    // find which IP Address must receive the reply based on it's ID
+    void find_func(llist_node node)
+    {
+        delegate_request_t* entry = (delegate_request_t*)node;
 
-    //print_dns_transaction(tra);
+        if (entry->id != remote_reply->header.id)
+            return;
 
-    free_dns_transaction(tra);
+        if (sendto(local_name_server, dgram, length, 0, (SOCKADDR*)&entry->query_source, sizeof(entry->query_source)) != SOCKET_ERROR)
+            printf("\nReply forwarded to %s", inet_ntoa(entry->query_source.sin_addr));
+        else
+            fprintf(stderr, "\nError trying to forward reply (id %u) back to IP %s : error code %d", remote_reply->header.id, inet_ntoa(entry->query_source.sin_addr),  WSAGetLastError());
+
+        llist_delete_node(delegate_requests_list, node, 1, NULL);
+    }
+    llist_for_each(delegate_requests_list, find_func);
+
+    free_dns_transaction(remote_reply);
 }
 
 int ConfigSocket(SOCKET* sock, u_long ip, int bConnect)
@@ -97,13 +185,20 @@ int ConfigSocket(SOCKET* sock, u_long ip, int bConnect)
 
 int main(int argc, char** argv)
 {
+    // create a list of
+    delegate_requests_list = llist_create(NULL, NULL, 0);
+
+    // read our records
+    dns_record_count = read_zone_file("config.txt", &dns_record_collection);
+    print_records_collection(dns_record_collection, dns_record_count);
+
     // init winsock
     WSADATA wsaData;
 
     if( WSAStartup(MAKEWORD(2,2), &wsaData) != 0)
     {
         fprintf(stderr, "\nWSAStartup failed: %d\n", WSAGetLastError());
-        return -1;
+        goto bail;
     }
     else
         printf("\nWinsock DLL is %s.\n", wsaData.szSystemStatus);
@@ -183,5 +278,8 @@ int main(int argc, char** argv)
     closesocket(local_name_server);
     closesocket(remote_name_server);
     WSACleanup();
+    free(dns_record_collection);
+    llist_destroy(delegate_requests_list, 1, NULL);
+
     return 0;
 }

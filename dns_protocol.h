@@ -135,7 +135,7 @@ enum dns_class {
 #define QNAME_SIZE 255
 typedef struct dns_question
 {
-    char qname[QNAME_SIZE];        // A domain name represented as a sequence of labels, where each label consists of a length octet followed by that number of octets. The domain name terminates with the zero length octet for the null label of the root.
+    char qname[QNAME_SIZE]; // this data is parsed - pointers are resolved and label format is converted to plain text
     uint16_t qtype;     // A two octet code which specifies the type of the query
     uint16_t qclass;    // A two octet code that specifies the class of the query
 } dns_question_t;
@@ -165,12 +165,12 @@ typedef struct dns_question
 
 #define RDATA_SIZE 255
 typedef struct dns_answer {
-    char aname[QNAME_SIZE];
+    char aname[QNAME_SIZE]; // this data is parsed - pointers are resolved and label format is converted to plain text
     uint16_t atype;     // This field specifies the meaning of the data in the RDATA field
     uint16_t aclass;    // the class of the data in the RDATA field
     uint32_t ttl;       // The number of seconds the results can be cached
     uint16_t rdlength;  // The length of the RDATA field
-    uint8_t rdata[RDATA_SIZE];
+    uint8_t rdata[RDATA_SIZE]; // this data is stored "as read from datagram" - no parsing at all
 } dns_answer_t;
 
 
@@ -182,8 +182,24 @@ typedef struct dns_transaction {
     dns_answer_t *answers_ar;
 } dns_transaction_t;
 
+
+
+
+int domain_plain_to_label(const char* name, char *label_buff);
+
 dns_transaction_t* read_dns_transaction(const char* dgram, int length);
 void print_dns_transaction(dns_transaction_t* tra);
 void free_dns_transaction(dns_transaction_t* tra);
+dns_transaction_t* create_dns_reply(dns_transaction_t* query);
+void add_answer_to_dns_reply(dns_transaction_t* reply, dns_answer_t new_answer);
+int write_dns_transaction(char* dgram, int buffer_length, dns_transaction_t* tra);
+
+//char* read_dns_answer(const char* dgram_start, const char* answer_start, dns_answer_t* answer);
+//char* write_dns_answer(char* position, dns_answer_t* answer);
+void print_dns_answer(dns_answer_t* answer);
+
+//char* read_dns_question(const char* dgram_start, const char* question_start, dns_question_t* question);
+//char* write_dns_question(char* position, dns_question_t* question);
+void print_dns_question(dns_question_t* question);
 
 #endif // _DNS_PROTOCOL_H_

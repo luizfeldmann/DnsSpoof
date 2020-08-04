@@ -1,0 +1,13 @@
+$ORIGIN example.com.
+$TTL 1m
+example.com.  IN  NS    ns                    ;
+example.com.  IN  NS    ns.somewhere.example. ;
+example.com.  IN  A     192.0.2.1             ;
+              IN  AAAA  2001:db8:10::1        ;
+ns            IN  A     192.0.2.2             ;
+              IN  AAAA  2001:db8:10::2        ;
+www           IN  CNAME example.com.          ;
+wwwtest       IN  CNAME www                   ;
+mail          IN  A     192.0.2.3             ;
+mail2         IN  A     192.0.2.4             ;
+mail3         IN  A     192.0.2.5             ;

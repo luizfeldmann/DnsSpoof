@@ -20,73 +20,7 @@
 #include <stdio.h>
 #include <string.h>
 
-// HEADER
-// ================================================================
-void read_dns_header(const char* dgram, dns_header_t* header)
-{
-    *header = (dns_header_t) {
-        .id    =   ntohs( *((u_short*)&dgram[0]) ),
-        .flags =   ntohs( *((u_short*)&dgram[2]) ),
-        .QDCount = ntohs( *((u_short*)&dgram[4]) ),
-        .ANCount = ntohs( *((u_short*)&dgram[6]) ),
-        .NSCount = ntohs( *((u_short*)&dgram[8]) ),
-        .ARCount = ntohs( *((u_short*)&dgram[10])),
-    };
-}
-
-char* getOPstring(uint16_t op)
-{
-    switch (op & OP_MASK)
-    {
-        case OP_QUERY:       return "Query"; break;
-        case OP_IQUERY:      return "Inverse Query"; break;
-        case OP_STATUS:      return "Status"; break;
-        case OP_RESERVED:    return "Reserved"; break;
-        case OP_NOTIFY:      return "Notify"; break;
-        case OP_UPDATE:      return "Update"; break;
-    }
-
-    return "Unknown";
-}
-
-char* getRCstring(uint16_t rc)
-{
-    switch (rc & RC_MASK)
-    {
-        case RC_NOERROR:        return "No error"; break;
-        case RC_FORMATERR:      return "Format error"; break;
-        case RC_SERVERFAILURE:  return "Server failure"; break;
-        case RC_NAMEERROR:      return "Name error"; break;
-        case RC_NOTIMPLEMENTED: return "Not implemented"; break;
-        case RC_REFUSED:        return "Refused"; break;
-        case RC_YXDOMAIN:       return "YXDOMAIN"; break;
-        case RC_YXRRSET:        return "YXRRSET"; break;
-        case RC_NXRRSET:        return "NXRRSET"; break;
-        case RC_NOTAUTH:        return "Not auth"; break;
-        case RC_NOTZONE:        return "Not zone"; break;
-    }
-
-    return "Unknown";
-}
-
-void print_dns_header(dns_header_t* header)
-{
-    printf("\nID: %u\nQR: %s\nOP: %s\nFlag: %s%s%s%s\nRC: %s\nQuestions: %u\nAnswers: %u\nAuthority: %u\nAdditional: %u",
-            header->id,
-            header->flags & QR_RESPONSE ? "Reply" : "Request",
-            getOPstring(header->flags),
-            header->flags & FLAG_AA ? " AuthAnswer " : "",
-            header->flags & FLAG_TC ? " TrunCated " : "",
-            header->flags & FLAG_RD ? " RecursionDesired " : "",
-            header->flags & FLAG_RA ? " RecursionAvailable " : "",
-            getRCstring(header->flags),
-            header->QDCount,
-            header->ANCount,
-            header->NSCount,
-            header->ARCount);
-}
-
-// QUERY
+// UTILITY
 // ================================================================
 char* read_dns_name(const char* dgram_start, const char* name_start, char* destination)
 {
@@ -131,6 +65,42 @@ char* read_dns_name(const char* dgram_start, const char* name_start, char* desti
     return currPtr;
 }
 
+int domain_plain_to_label(const char* name, char *label_buff)
+{
+    void chrcat(char* appendTo, char c)
+    {
+      size_t len = strlen(appendTo);
+      appendTo[len] = c;
+      appendTo[len + 1] = '\0';
+    }
+
+    strcpy(label_buff, "");
+
+    uint8_t i;
+    uint8_t curr_label_len;
+    uint8_t full_name_len = strlen(name);
+    char curr_label[64] = "";
+
+    for (i = 0, curr_label_len = 0; i < full_name_len; i++)
+    {
+        char c = name[i];
+
+        if (c == '.')
+        {
+            chrcat(label_buff, curr_label_len);
+            strcat(label_buff, curr_label);
+            strcpy(curr_label, "");
+        }
+        else
+        {
+            chrcat(curr_label, c);
+            curr_label_len++;
+        }
+    }
+
+    return strlen(label_buff) + 1;
+}
+
 char* getTypeString(uint16_t _type)
 {
     switch (_type)
@@ -161,14 +131,119 @@ char* getClassString(uint16_t _class)
     return "Unknown";
 }
 
+char* getOPstring(uint16_t op)
+{
+    switch (op & OP_MASK)
+    {
+        case OP_QUERY:       return "Query"; break;
+        case OP_IQUERY:      return "Inverse Query"; break;
+        case OP_STATUS:      return "Status"; break;
+        case OP_RESERVED:    return "Reserved"; break;
+        case OP_NOTIFY:      return "Notify"; break;
+        case OP_UPDATE:      return "Update"; break;
+    }
+
+    return "Unknown";
+}
+
+char* getRCstring(uint16_t rc)
+{
+    switch (rc & RC_MASK)
+    {
+        case RC_NOERROR:        return "No error"; break;
+        case RC_FORMATERR:      return "Format error"; break;
+        case RC_SERVERFAILURE:  return "Server failure"; break;
+        case RC_NAMEERROR:      return "Name error"; break;
+        case RC_NOTIMPLEMENTED: return "Not implemented"; break;
+        case RC_REFUSED:        return "Refused"; break;
+        case RC_YXDOMAIN:       return "YXDOMAIN"; break;
+        case RC_YXRRSET:        return "YXRRSET"; break;
+        case RC_NXRRSET:        return "NXRRSET"; break;
+        case RC_NOTAUTH:        return "Not auth"; break;
+        case RC_NOTZONE:        return "Not zone"; break;
+    }
+
+    return "Unknown";
+}
+
+// HEADER
+// ================================================================
+void read_dns_header(const char* dgram, dns_header_t* header)
+{
+    *header = (dns_header_t) {
+        .id    =   ntohs( *((u_short*)&dgram[0]) ),
+        .flags =   ntohs( *((u_short*)&dgram[2]) ),
+        .QDCount = ntohs( *((u_short*)&dgram[4]) ),
+        .ANCount = ntohs( *((u_short*)&dgram[6]) ),
+        .NSCount = ntohs( *((u_short*)&dgram[8]) ),
+        .ARCount = ntohs( *((u_short*)&dgram[10])),
+    };
+}
+
+char* write_dns_header(char* position, dns_header_t* header)
+{
+    *((u_short*)&position[0]) = htons(header->id);
+    *((u_short*)&position[2]) = htons(header->flags);
+    *((u_short*)&position[4]) = htons(header->QDCount);
+    *((u_short*)&position[6]) = htons(header->ANCount);
+    *((u_short*)&position[8]) = htons(header->NSCount);
+    *((u_short*)&position[10]) = htons(header->ARCount);
+
+    return position + 12;
+}
+
+void print_dns_header(dns_header_t* header)
+{
+    printf("\nID: %u\nQR: %s\nOP: %s\nFlag: %s%s%s%s\nRC: %s\nQuestions: %u\nAnswers: %u\nAuthority: %u\nAdditional: %u",
+            header->id,
+            header->flags & QR_RESPONSE ? "Reply" : "Request",
+            getOPstring(header->flags),
+            header->flags & FLAG_AA ? " AuthAnswer " : "",
+            header->flags & FLAG_TC ? " TrunCated " : "",
+            header->flags & FLAG_RD ? " RecursionDesired " : "",
+            header->flags & FLAG_RA ? " RecursionAvailable " : "",
+            getRCstring(header->flags),
+            header->QDCount,
+            header->ANCount,
+            header->NSCount,
+            header->ARCount);
+}
+
+// QUESTION
+// ================================================================
 char* read_dns_question(const char* dgram_start, const char* question_start, dns_question_t* question)
 {
+    if (question == NULL || question_start == NULL || dgram_start == NULL)
+    {
+        fprintf(stderr, "\nread_dns_question got null pointer!");
+        return NULL;
+    }
+
     char* curr = read_dns_name(dgram_start, (char*)question_start, question->qname);
 
     question->qtype  = ntohs( *((uint16_t*)(curr)) );
     curr += sizeof(question->qtype);
 
     question->qclass = ntohs( *((uint16_t*)(curr)) );
+    curr += sizeof(question->qclass);
+
+    return curr;
+}
+
+char* write_dns_question(char* position, dns_question_t* question)
+{
+    if (question == NULL || position == NULL)
+    {
+        fprintf(stderr, "\nwrite_dns_question got null pointer!");
+        return NULL;
+    }
+
+    char *curr = position + domain_plain_to_label(question->qname, position);
+
+    *((uint16_t*)(curr)) = htons(question->qtype);
+    curr += sizeof(question->qtype);
+
+    *((uint16_t*)(curr)) = htons(question->qclass);
     curr += sizeof(question->qclass);
 
     return curr;
@@ -208,6 +283,29 @@ char* read_dns_answer(const char* dgram_start, const char* answer_start, dns_ans
     return curr;
 }
 
+char* write_dns_answer(char* position, dns_answer_t* answer)
+{
+    char *curr = position + domain_plain_to_label(answer->aname, position);
+
+    *((uint16_t*)(curr)) = htons(answer->atype);
+    curr += sizeof(answer->atype);
+
+    *((uint16_t*)(curr)) = htons(answer->aclass);
+    curr += sizeof(answer->aclass);
+
+    *((uint32_t*)(curr)) = htonl(answer->ttl);
+    curr += sizeof(answer->ttl);
+
+    *((uint16_t*)(curr)) = htons(answer->rdlength);
+    curr += sizeof(answer->rdlength);
+
+    // write the data
+    memcpy(curr, answer->rdata, min(answer->rdlength, RDATA_SIZE));
+    curr += answer->rdlength;
+
+    return curr;
+}
+
 void print_dns_answer(dns_answer_t* answer)
 {
     printf("\nName: %s\nType: %s\nClass: %s\nTime: %u\nData length: %u",
@@ -223,7 +321,7 @@ void print_dns_answer(dns_answer_t* answer)
 
 // TRANSACTION
 // ================================================================
-#define TRANSACTION_PRINT 1
+//#define TRANSACTION_PRINT 1
 dns_transaction_t* read_dns_transaction(const char* dgram, int length)
 {
     if (length < 12)
@@ -294,6 +392,86 @@ dns_transaction_t* read_dns_transaction(const char* dgram, int length)
     return tra;
 }
 
+int write_dns_transaction(char* dgram, int buffer_length, dns_transaction_t* tra)
+{
+    char* position = dgram;
+
+    position = write_dns_header(position, &tra->header);
+
+    int i;
+
+    for (i = 0; (i < tra->header.QDCount) /*&& ((position - dgram) > buffer_length)*/; i++)
+        position = write_dns_question(position, &tra->questions[i]);
+
+    /*for (i = 0; (i < tra->header.ANCount) && ((position - dgram) > buffer_length); i++)
+        position = write_dns_answer(position, &tra->answers_an[i]);
+
+    for (i = 0; (i < tra->header.NSCount) && ((position - dgram) > buffer_length); i++)
+        position = write_dns_answer(position, &tra->answers_ns[i]);
+
+    for (i = 0; (i < tra->header.ARCount) && ((position - dgram) > buffer_length); i++)
+        position = write_dns_answer(position, &tra->answers_ar[i]);*/
+
+    return (int)(position - dgram);
+}
+
+dns_transaction_t* create_dns_reply(dns_transaction_t* query)
+{
+    dns_transaction_t* reply = (dns_transaction_t*)malloc(sizeof(dns_transaction_t));
+    if (reply == NULL)
+        return NULL;
+
+    *reply = (dns_transaction_t) {
+        .header = (dns_header_t){
+            .id = query->header.id,
+            .flags = query->header.flags | QR_RESPONSE | FLAG_AA,
+            .QDCount = query->header.QDCount,
+            .ANCount = 0,
+            .NSCount = 0,
+            .ARCount = 0,
+        },
+        .questions = (dns_question_t*)calloc(query->header.QDCount, sizeof(dns_question_t)),
+        .answers_an = NULL,
+        .answers_ns = NULL,
+        .answers_ar = NULL,
+    };
+
+    // the reply carries a copy of the queried questions
+    memcpy(reply->questions, query->questions, query->header.QDCount*sizeof(dns_question_t));
+
+    return reply;
+}
+
+void add_answer_to_dns_reply(dns_transaction_t* reply, dns_answer_t new_answer)
+{
+    if (reply == NULL)
+        return;
+
+    uint16_t* counter = &reply->header.ARCount;
+    dns_answer_t **list = &reply->answers_ar;
+
+    if (new_answer.atype == DNS_TYPE_A)
+    {
+        counter = &reply->header.ANCount;
+        list = &reply->answers_an;
+    }
+    else if (new_answer.atype == DNS_TYPE_NS)
+    {
+        counter = &reply->header.NSCount;
+        list = &reply->answers_ns;
+    }
+
+    dns_answer_t *new_list = (dns_answer_t*)realloc((*list), sizeof(dns_answer_t)* ((*counter) + 1));
+    if (new_list == NULL)
+        return; // reallocation failed
+    else
+        (*list) = new_list;
+
+    new_list[*counter] = new_answer; // copy the new answer to inside the new element on the list
+
+    (*counter) = (*counter) + 1;
+}
+
 void free_dns_transaction(dns_transaction_t* tra)
 {
     free(tra->questions);
@@ -310,25 +488,25 @@ void print_dns_transaction(dns_transaction_t* tra)
     if (tra->questions != NULL)
     for (int i = 0; i < tra->header.QDCount; i++)
     {
-        printf("\nQUERY #%d:", i);
+        printf("\n\nQUERY #%d:", i);
         print_dns_question(&tra->questions[i]);
     }
 
     if (tra->answers_an) for (int i = 0; i < tra->header.ANCount; i++)
     {
-        printf("\nANSWER RECORD #%d:", i);
+        printf("\n\nANSWER RECORD #%d:", i);
         print_dns_answer(&tra->answers_an[i]);
     }
 
     if (tra->answers_ns) for (int i = 0; i < tra->header.NSCount; i++)
     {
-        printf("\nAUTHORITATIVE RECORD #%d:", i);
+        printf("\n\nAUTHORITATIVE RECORD #%d:", i);
         print_dns_answer(&tra->answers_ns[i]);
     }
 
     if (tra->answers_ar) for (int i = 0; i < tra->header.ARCount; i++)
     {
-        printf("\nADDITIONAL RECORD #%d:", i);
+        printf("\n\nADDITIONAL RECORD #%d:", i);
         print_dns_answer(&tra->answers_ar[i]);
     }
 }
