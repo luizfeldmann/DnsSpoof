@@ -122,6 +122,7 @@ enum dns_type {
     DNS_TYPE_MX     = 15,        // 15 // mail exchange
     DNS_TYPE_TXT    = 16,        // 16 // text strings
     DNS_TYPE_AAAA   = 28,        // 28 // ipv6 host address
+    DNS_TYPE_ANY    = 255,       // - FOR INTERNAL USE ONLY - NOT AN ACTUAL TYPE
 };
 
 enum dns_class {
@@ -184,7 +185,7 @@ typedef struct dns_transaction {
 
 
 
-
+char* read_dns_name(const char* dgram_start, const char* name_start, char* destination);
 int domain_plain_to_label(const char* name, char *label_buff);
 
 dns_transaction_t* read_dns_transaction(const char* dgram, int length);

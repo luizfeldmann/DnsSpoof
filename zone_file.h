@@ -23,5 +23,6 @@
 void print_records_collection(dns_answer_t* first, int count);
 unsigned read_zone_file(const char* filename, dns_answer_t** pointer_to_records);
 int find_next_dns_match(const char* domain, dns_answer_t* collection, unsigned int count, int previous);
+dns_transaction_t*  build_dns_reply_from_query(dns_transaction_t* query, dns_answer_t *dns_record_collection, unsigned int dns_record_count);
 
 #endif // _ZONE_FILE_H_

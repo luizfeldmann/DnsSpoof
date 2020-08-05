@@ -50,32 +50,14 @@ void ReceivedQuery(const char* dgram, int length, struct sockaddr_in query_addr)
     //    print_dns_transaction(query);
 
     // look for a match in the records
-    dns_transaction_t* reply = NULL;
-
-    for (uint16_t q = 0; q < query->header.QDCount; q++)
-    {
-        printf("\nQuery: %s", query->questions[q].qname);
-        int match = -1;
-
-        while ((match = find_next_dns_match(query->questions[q].qname, dns_record_collection, dns_record_count, match)) >= 0)
-        {
-            // we found a match
-            if (reply == NULL) // maybe the first?
-            {
-                if ( (reply = create_dns_reply(query)) == NULL)
-                    continue; // creation check failed
-            }
-
-            add_answer_to_dns_reply(reply, dns_record_collection[match]);
-        }
-    }
+    dns_transaction_t* reply = build_dns_reply_from_query(query, dns_record_collection, dns_record_count);
 
     if (!reply)
     {
         // no matches found
         // relay query to remote nameserver
 
-        /*delegate_request_t* entry = (delegate_request_t*)malloc(sizeof(delegate_request_t));
+        delegate_request_t* entry = (delegate_request_t*)malloc(sizeof(delegate_request_t)); // keep track of what IP originated this query so we know who to send the reply we'll get later
         *entry = (delegate_request_t){
             .id = query->header.id,
             .query_source = query_addr,
@@ -84,9 +66,11 @@ void ReceivedQuery(const char* dgram, int length, struct sockaddr_in query_addr)
 
         if (llist_push(delegate_requests_list, entry) == LLIST_SUCCESS)
         {
-            send(remote_name_server, dgram, length, 0);
-            printf("\nNo matches found: relaying to backup server...");
-        }*/
+            if (send(remote_name_server, dgram, length, 0) != SOCKET_ERROR)
+                printf("\nNo matches found: relaying request to backup server...");
+            else
+                fprintf(stderr, "\nError forwarding request: %d", WSAGetLastError());
+        }
     }
     else
     {
@@ -95,6 +79,8 @@ void ReceivedQuery(const char* dgram, int length, struct sockaddr_in query_addr)
 
         char out_buff[512];
         int len = write_dns_transaction(out_buff, 256, reply);
+
+        //printf("\nbuffer length is %d", len);
 
         if (sendto(local_name_server, out_buff, len, 0, (SOCKADDR*)&query_addr, sizeof(query_addr)) == SOCKET_ERROR)
             fprintf(stderr, "\nError trying to send reply: %d", WSAGetLastError());

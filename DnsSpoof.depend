@@ -1,5 +1,5 @@
 # depslib dependency file v1.0
-1596512362 source:d:\developer\dnsspoof\main.c
+1596585766 source:d:\developer\dnsspoof\main.c
 	"dns_protocol.h"
 	<winsock2.h>
 	<stdio.h>
@@ -10,19 +10,19 @@
 1596387525 d:\developer\dnsspoof\protocol.h
 	<stdint.h>
 
-1596509188 source:d:\developer\dnsspoof\dns_protocol.c
+1596585970 source:d:\developer\dnsspoof\dns_protocol.c
 	"dns_protocol.h"
 	<winsock2.h>
 	<stdio.h>
 	<string.h>
 
-1596509216 d:\developer\dnsspoof\dns_protocol.h
+1596586962 d:\developer\dnsspoof\dns_protocol.h
 	<stdint.h>
 
-1596508820 d:\developer\dnsspoof\zone_file.h
+1596585769 d:\developer\dnsspoof\zone_file.h
 	"dns_protocol.h"
 
-1596508838 source:d:\developer\dnsspoof\zone_file.c
+1596585920 source:d:\developer\dnsspoof\zone_file.c
 	"zone_file.h"
 	<stdio.h>
 	<stdlib.h>

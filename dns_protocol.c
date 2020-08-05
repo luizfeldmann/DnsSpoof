@@ -24,6 +24,10 @@
 // ================================================================
 char* read_dns_name(const char* dgram_start, const char* name_start, char* destination)
 {
+    // sanity check
+    if(name_start == NULL || destination == NULL)
+        return NULL;
+
     // clear destination
     strcpy(destination, "");
 
@@ -39,6 +43,9 @@ char* read_dns_name(const char* dgram_start, const char* name_start, char* desti
             break; // end of string
         else if (label_len >= 0xC0)
         {
+            if (dgram_start == NULL) // cannot parse pointer if no reference to beginning of message
+                break;
+
             // pointer
             uint16_t pointer = *((uint8_t*)currPtr) + (label_len & 0b00111111)*255; // pointer is 14 bit long comprised of the "label-length" plus one more byte
             currPtr++;
@@ -67,14 +74,24 @@ char* read_dns_name(const char* dgram_start, const char* name_start, char* desti
 
 int domain_plain_to_label(const char* name, char *label_buff)
 {
+    // sanity check
+    if (label_buff == NULL)
+        return 0;
+
+    // start clear
+    strcpy(label_buff, "");
+
+    // another check
+    if (name == NULL)
+        return 0;
+
+    // function to append character to string
     void chrcat(char* appendTo, char c)
     {
       size_t len = strlen(appendTo);
       appendTo[len] = c;
       appendTo[len + 1] = '\0';
     }
-
-    strcpy(label_buff, "");
 
     uint8_t i;
     uint8_t curr_label_len;
@@ -89,7 +106,10 @@ int domain_plain_to_label(const char* name, char *label_buff)
         {
             chrcat(label_buff, curr_label_len);
             strcat(label_buff, curr_label);
+
+            // zero the current label
             strcpy(curr_label, "");
+            curr_label_len = 0;
         }
         else
         {
@@ -98,7 +118,7 @@ int domain_plain_to_label(const char* name, char *label_buff)
         }
     }
 
-    return strlen(label_buff) + 1;
+    return strlen(label_buff) + 1; // return the length of the label-formated data
 }
 
 char* getTypeString(uint16_t _type)
@@ -170,6 +190,14 @@ char* getRCstring(uint16_t rc)
 // ================================================================
 void read_dns_header(const char* dgram, dns_header_t* header)
 {
+    // sanity check
+    if (header == NULL || dgram == NULL)
+        return;
+
+    // ntohs converts network-endian short to host-endian short
+    // ntohs converts network-endian long to host-endian long
+
+    // read struct from buff
     *header = (dns_header_t) {
         .id    =   ntohs( *((u_short*)&dgram[0]) ),
         .flags =   ntohs( *((u_short*)&dgram[2]) ),
@@ -182,6 +210,14 @@ void read_dns_header(const char* dgram, dns_header_t* header)
 
 char* write_dns_header(char* position, dns_header_t* header)
 {
+    // sanity check
+    if (header == NULL || position == NULL)
+        return NULL;
+
+    // htons converts host-endian short network-endian short
+    // htonl converts host-endian long network-endian long
+
+    // write struct to buff
     *((u_short*)&position[0]) = htons(header->id);
     *((u_short*)&position[2]) = htons(header->flags);
     *((u_short*)&position[4]) = htons(header->QDCount);
@@ -400,17 +436,17 @@ int write_dns_transaction(char* dgram, int buffer_length, dns_transaction_t* tra
 
     int i;
 
-    for (i = 0; (i < tra->header.QDCount) /*&& ((position - dgram) > buffer_length)*/; i++)
+    for (i = 0; (i < tra->header.QDCount) && ((int)(position - dgram) < buffer_length); i++)
         position = write_dns_question(position, &tra->questions[i]);
 
-    /*for (i = 0; (i < tra->header.ANCount) && ((position - dgram) > buffer_length); i++)
+    for (i = 0; (i < tra->header.ANCount) && ((int)(position - dgram) < buffer_length); i++)
         position = write_dns_answer(position, &tra->answers_an[i]);
 
-    for (i = 0; (i < tra->header.NSCount) && ((position - dgram) > buffer_length); i++)
+    for (i = 0; (i < tra->header.NSCount) && ((int)(position - dgram) < buffer_length); i++)
         position = write_dns_answer(position, &tra->answers_ns[i]);
 
-    for (i = 0; (i < tra->header.ARCount) && ((position - dgram) > buffer_length); i++)
-        position = write_dns_answer(position, &tra->answers_ar[i]);*/
+    for (i = 0; (i < tra->header.ARCount) && ((int)(position - dgram) < buffer_length); i++)
+        position = write_dns_answer(position, &tra->answers_ar[i]);
 
     return (int)(position - dgram);
 }

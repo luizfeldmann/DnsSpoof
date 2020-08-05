@@ -255,3 +255,70 @@ int find_next_dns_match(const char* domain, dns_answer_t* collection, unsigned i
 
     return -1;
 }
+
+int dns_add_records(char* domain, enum dns_type filter, dns_transaction_t* reply, dns_answer_t *dns_record_collection, unsigned int dns_record_count, int* countFound)
+{
+    int countAdded = 0;
+
+    if (reply == NULL || domain == NULL) // sanity check
+        goto bail;
+
+    int match = -1;
+
+    while ((match = find_next_dns_match(domain, dns_record_collection, dns_record_count, match)) >= 0)
+    {
+        (*countFound)++;
+
+        dns_answer_t* ans = &dns_record_collection[match];
+
+        if (filter == DNS_TYPE_ANY || filter == ans->atype) // found a record matching the required type
+        {
+            add_answer_to_dns_reply(reply, *ans);
+            countAdded++;
+        }
+        else if (ans->atype == DNS_TYPE_CNAME || ans->atype == DNS_TYPE_NS) // this is not the right type but may point to one of the right type
+        {
+            char recursive_domain[256] = "";
+
+            if (!read_dns_name(NULL, (char*)ans->rdata, recursive_domain))
+                continue; // bad bad bad
+
+            int recursive_added = dns_add_records(recursive_domain, filter, reply, dns_record_collection, dns_record_count, countFound);
+            if (recursive_added)
+            {
+                add_answer_to_dns_reply(reply, *ans);
+                countAdded++;
+                countAdded += recursive_added;
+            }
+        }
+    }
+
+    bail:
+    return countAdded;
+}
+
+dns_transaction_t* build_dns_reply_from_query(dns_transaction_t* query, dns_answer_t *dns_record_collection, unsigned int dns_record_count)
+{
+    // sanity check
+    if (query == NULL || dns_record_collection == NULL || dns_record_count == 0)
+        return NULL;
+
+    int numAdded = 0;
+    int numFound = 0;
+    dns_transaction_t* reply = create_dns_reply(query);
+
+    for (uint16_t q = 0; q < query->header.QDCount; q++)
+    {
+        printf("\nQuery: %s", query->questions[q].qname);
+        numAdded += dns_add_records(query->questions[q].qname, query->questions[q].qtype, reply, dns_record_collection, dns_record_count, &numFound);
+    }
+
+    if (numFound == 0) // we use *found* not *added* // maybe we didn't add any records (because they were the wrong type) but we sure found some records of other types, in this case we might as well return an empty respose
+    {
+        // no records were found
+        free_dns_transaction(reply);
+        return NULL;
+    }
+
+    return reply;
+}
